@@ -1,17 +1,44 @@
 use config::*;
 use glob::glob;
+use std::path::PathBuf;
 use log;
 
-fn get_conf_dirs(name: &str, suffix: &str) -> Vec<String>{
-    let etc_dir = format!("/etc/{}.{}", name, suffix);
-    let run_dir = format!("/run/{}.{}", name, suffix);
-    let usr_dir = format!("/usr/**/{}.{}", name, suffix);
-    vec![etc_dir, run_dir, usr_dir]
+fn get_conf_dirs(name: &str) -> Vec<PathBuf>{
+    //let mut paths: Vec<PathBuf> = Vec::new();
+    let etc_dir = PathBuf::from("/etc/");
+    let etc_subdir = etc_dir.join(name);
+    let run_dir = PathBuf::from("/run/");
+    let run_subdir = run_dir.join(name);
+    let usr_etcdir = PathBuf::from("/usr/etc/");
+    let usr_etcsubdir = usr_etcdir.join(name);
+    let usr_sharedir = PathBuf::from("/usr/share/");
+    let usr_sharesubdir = usr_sharedir.join(name);
+    let usr_libdir = PathBuf::from("/usr/lib/");
+    let usr_libsubdir = usr_libdir.join(name);
+
+    let paths = vec![etc_dir, 
+        etc_subdir, 
+        run_dir, 
+        run_subdir, 
+        usr_etcdir, 
+        usr_etcsubdir, 
+        usr_sharedir, 
+        usr_sharesubdir, 
+        usr_libdir, 
+        usr_libsubdir
+    ];
+    paths
 }
 
-fn find_conf(paths: Vec<String>) -> String {
-    for file in paths {
-        for entry in glob(&file).expect("Failed to read glob pattern") {
+fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> String {
+    for file in paths.iter_mut() {
+        file.push(name);
+        file.set_extension(suffix);
+        let strpath = match file.to_str() {
+            Some(str) => str,
+            None => "",
+        };
+        for entry in glob(strpath).expect("Failed to read glob pattern") {
             match entry {
                 Ok(path) => {
                     log::info!("Highest priority config file: {}", path.display());
@@ -25,10 +52,10 @@ fn find_conf(paths: Vec<String>) -> String {
     return "No file found".to_string();
 }
 
-pub fn read_config(name: &str, suffix: &str, format: FileFormat) -> Result<Config, ConfigError> {
-    let paths = get_conf_dirs(name, suffix);
+pub fn read_config(name: &str, suffix: &str, _format: FileFormat) -> Result<Config, ConfigError> {
+    let paths = get_conf_dirs(name);
 
-    let configfile = find_conf(paths);
+    let configfile = find_conf(paths, name, suffix);
 
     let settings = Config::builder()
     .add_source(File::with_name(&configfile))
