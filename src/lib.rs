@@ -1,10 +1,8 @@
-use config::{*, builder::DefaultState};
+use config::{builder::DefaultState, *};
 use std::collections::HashMap;
 use std::path::PathBuf;
-use log;
 
 fn get_conf_dirs(name: &str) -> Vec<PathBuf> {
-    //let mut paths: Vec<PathBuf> = Vec::new();
     let etc_dir = PathBuf::from("/etc/");
     let etc_subdir = etc_dir.join(name);
     let run_dir = PathBuf::from("/run/");
@@ -17,21 +15,20 @@ fn get_conf_dirs(name: &str) -> Vec<PathBuf> {
     let usr_libsubdir = usr_libdir.join(name);
 
     vec![
-        etc_dir, 
-        etc_subdir, 
-        run_dir, 
-        run_subdir, 
-        usr_etcdir, 
-        usr_etcsubdir, 
-        usr_sharedir, 
-        usr_sharesubdir, 
+        etc_dir,
+        etc_subdir,
+        run_dir,
+        run_subdir,
+        usr_etcdir,
+        usr_etcsubdir,
+        usr_sharedir,
+        usr_sharesubdir,
         usr_libdir,
-        usr_libsubdir
+        usr_libsubdir,
     ]
 }
 
-
-fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str/*, suffix: &str*/) -> Vec<PathBuf> {
+fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str /*, suffix: &str*/) -> Vec<PathBuf> {
     let mut dropin_paths: Vec<PathBuf> = vec![];
     for path in &conf_dirs {
         let base = path.join(name);
