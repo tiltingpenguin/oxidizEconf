@@ -1,7 +1,13 @@
 use config::{builder::DefaultState, *};
 use std::collections::HashMap;
-use std::path::PathBuf;
-
+use std::{path::PathBuf, fmt::Debug};
+/*
+struct Cfg {
+    name: String,
+    config: Config,
+    path_override: Option<PathBuf>,
+}
+*/
 fn get_conf_dirs(name: &str) -> Vec<PathBuf> {
     let etc_dir = PathBuf::from("/etc/");
     let etc_subdir = etc_dir.join(name);
@@ -28,22 +34,6 @@ fn get_conf_dirs(name: &str) -> Vec<PathBuf> {
     ]
 }
 
-fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str /*, suffix: &str*/) -> Vec<PathBuf> {
-    let mut dropin_paths: Vec<PathBuf> = vec![];
-    for path in &conf_dirs {
-        let base = path.join(name);
-        let d = base.join(".d");
-        let confd = base.join(".conf.d");
-        if d.is_dir() {
-            dropin_paths.push(d);
-        } else if confd.is_dir() {
-            dropin_paths.push(confd);
-        }
-    }
-
-    dropin_paths
-}
-
 fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBuf> {
     for path in paths.iter_mut() {
         path.set_file_name(name);
@@ -54,21 +44,64 @@ fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBu
         }
     }
     log::info!("No main config file found, reading dropins");
-    return None;
+    None
 }
 
-pub fn read_config(name: &str, suffix: &str, format: FileFormat) -> Result<Config, ConfigError> {
+fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str /*, suffix: &str*/) -> Vec<PathBuf> {
+    let mut dropin_paths: Vec<PathBuf> = vec![];
+    for path in &conf_dirs {
+        let ext1 = format!("{}.d", name);
+        let ext2 = format!("{}.conf.d", name);
+        let d = path.join(ext1);
+        let confd = path.join(ext2);
+        if d.is_dir() {
+            dropin_paths.push(d);
+        } else if confd.is_dir() {
+            dropin_paths.push(confd);
+        }
+    }
+
+    let mut dropin_list: Vec<PathBuf> = vec![];
+    for path in dropin_paths {
+        for entry in path.read_dir().expect("failed to read dir") {
+            if let Ok(entry) = entry {
+                if entry.file_type().expect("dropin should have file type").is_file() {
+                    dropin_list.push(entry.path());
+                }
+            }
+        }
+    }
+
+    dropin_list
+}
+
+fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigError> {
+    let mut dropin_map: HashMap<String, Value> = HashMap::new();
+    for d in dropins {
+        let x = File::from(d).collect()?;
+        for (key, val) in x.iter() {
+            dropin_map.insert(key.clone(), val.clone());
+        }
+    }
+    
+    Ok(dropin_map)
+}
+
+pub fn read_config(name: &str, suffix: &str) -> Result<Config, ConfigError> {
+    let mut builder: ConfigBuilder<DefaultState> = Config::builder();
     let paths = get_conf_dirs(name);
     let dropin_paths = paths.clone();
-
     let configfile = find_conf(paths, name, suffix);
-    let dropins = find_dropins(dropin_paths, name);
-
-    let mut builder: ConfigBuilder<DefaultState> = Config::builder();
 
     if configfile.is_some() {
-        let s = File::new(configfile.unwrap().to_str().unwrap(), format);
-        builder = builder.add_source(s);
+        builder = builder.add_source(File::from(configfile.unwrap()));
+    }
+
+    let dropin_files = find_dropins(dropin_paths, name);
+    let dropins = read_dropins(dropin_files)?;
+
+    for (key, val) in dropins {
+        builder = builder.set_override(key, val)?;
     }
 
     builder.build()
