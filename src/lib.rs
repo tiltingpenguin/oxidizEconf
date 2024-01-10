@@ -1,6 +1,6 @@
 use config::{builder::DefaultState, *};
 use std::collections::HashMap;
-use std::{path::PathBuf, fmt::Debug};
+use std::{path::PathBuf, fmt::Debug, error::Error};
 /*
 struct Cfg {
     name: String,
@@ -8,7 +8,23 @@ struct Cfg {
     path_override: Option<PathBuf>,
 }
 */
-fn get_conf_dirs(name: &str) -> Vec<PathBuf> {
+#[derive(Debug, Clone)]
+pub struct ConfFile;
+
+impl Format for ConfFile {
+    fn parse(&self, uri: Option<&String>, test: &str) -> Result<Map<String, Value>, Box<dyn Error + Send + Sync>> {
+        // should be parsed like an ini file
+        todo!()
+    }
+}
+
+impl FileStoredFormat for ConfFile {
+    fn file_extensions(&self) -> &'static [&'static str] {
+        &["conf"]
+    }
+}
+
+fn get_default_dirs(name: &str) -> Vec<PathBuf> {
     let etc_dir = PathBuf::from("/etc/");
     let etc_subdir = etc_dir.join(name);
     let run_dir = PathBuf::from("/run/");
@@ -89,7 +105,7 @@ fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigE
 
 pub fn read_config(name: &str, suffix: &str) -> Result<Config, ConfigError> {
     let mut builder: ConfigBuilder<DefaultState> = Config::builder();
-    let paths = get_conf_dirs(name);
+    let paths = get_default_dirs(name);
     let dropin_paths = paths.clone();
     let configfile = find_conf(paths, name, suffix);
 
