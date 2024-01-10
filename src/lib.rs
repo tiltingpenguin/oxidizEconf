@@ -71,7 +71,7 @@ fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str /*, suffix: &str*/) -> Vec<P
             }
         }
     }
-
+    dropin_list.reverse();
     dropin_list
 }
 
