@@ -1,7 +1,6 @@
 use config::{builder::DefaultState, *};
 use std::collections::HashMap;
 use std::{path::PathBuf, fmt::Debug, error::Error};
-use std::any::type_name;
 /*
 struct Cfg {
     name: String,
@@ -9,21 +8,6 @@ struct Cfg {
     path_override: Option<PathBuf>,
 }
 */
-#[derive(Debug, Clone)]
-pub struct ConfFile;
-
-impl Format for ConfFile {
-    fn parse(&self, uri: Option<&String>, test: &str) -> Result<Map<String, Value>, Box<dyn Error + Send + Sync>> {
-        // should be parsed like an ini file
-        todo!()
-    }
-}
-
-impl FileStoredFormat for ConfFile {
-    fn file_extensions(&self) -> &'static [&'static str] {
-        &["conf"]
-    }
-}
 
 fn get_default_dirs(name: &str) -> Vec<PathBuf> {
     let etc_dir = PathBuf::from("/etc/");
@@ -99,7 +83,10 @@ fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigE
         // try to parse any unknown file format as ini
         let f = match ext.to_str().unwrap() {
             "toml" | "json" | "yaml" | "yml" | "ini" | "ron" | "json5" => File::from(d).collect()?,
-            _ => File::new(d.to_str().unwrap(), FileFormat::Ini).collect()?,
+            _ => { 
+                log::debug!("Unknown file format. Trying to parse as ini");
+                File::new(d.to_str().unwrap(), FileFormat::Ini).collect()?
+            },
         };
         for (key, val) in f.iter() {
             dropin_map.insert(key.clone(), val.clone());
