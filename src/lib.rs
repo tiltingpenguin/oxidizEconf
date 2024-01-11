@@ -1,6 +1,7 @@
 use config::{builder::DefaultState, *};
 use std::collections::HashMap;
 use std::{path::PathBuf, fmt::Debug, error::Error};
+use std::any::type_name;
 /*
 struct Cfg {
     name: String,
@@ -94,8 +95,13 @@ fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str /*, suffix: &str*/) -> Vec<P
 fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigError> {
     let mut dropin_map: HashMap<String, Value> = HashMap::new();
     for d in dropins {
-        let x = File::from(d).collect()?;
-        for (key, val) in x.iter() {
+        let ext = d.extension().unwrap();
+        // try to parse any unknown file format as ini
+        let f = match ext.to_str().unwrap() {
+            "toml" | "json" | "yaml" | "yml" | "ini" | "ron" | "json5" => File::from(d).collect()?,
+            _ => File::new(d.to_str().unwrap(), FileFormat::Ini).collect()?,
+        };
+        for (key, val) in f.iter() {
             dropin_map.insert(key.clone(), val.clone());
         }
     }
