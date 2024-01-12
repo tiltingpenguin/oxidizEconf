@@ -1,13 +1,60 @@
 use config::{builder::DefaultState, *};
 use std::collections::HashMap;
 use std::{path::PathBuf, fmt::Debug, error::Error};
-/*
-struct Cfg {
+
+#[derive(Debug, Clone)]
+pub struct Cfg {
     name: String,
-    config: Config,
-    path_override: Option<PathBuf>,
+    config: Option<Config>,
+    path_override: Option<Vec<PathBuf>>,
 }
-*/
+
+impl Cfg {
+    pub fn from_config(name: &str, suffix: &str) -> Result<Self, ConfigError> {
+
+        let mut cfg = Self {
+            name: name.to_owned(),
+            config: None,
+            path_override: None,
+        };
+        cfg.read_config(name, suffix)
+    }
+
+    pub fn read_config(&mut self, name: &str, suffix: &str) -> Result<Self, ConfigError> {
+        let mut builder: ConfigBuilder<DefaultState> = Config::builder();
+        let paths: Vec<PathBuf>;
+        match self.path_override {
+            Some(_) => paths = self.path_override.clone().unwrap(),
+            None => paths = get_default_dirs(name),
+        }
+        let dropin_paths = paths.clone();
+        let configfile = find_conf(paths, name, suffix);
+    
+        if configfile.is_some() {
+            builder = builder.add_source(File::from(configfile.unwrap()));
+        }
+    
+        let dropin_files = find_dropins(dropin_paths, name);
+        let dropins = read_dropins(dropin_files)?;
+    
+        for (key, val) in dropins {
+            builder = builder.set_override(key, val)?;
+        }
+        let config = builder.build()?;
+
+        Ok(Self {
+            name: name.to_owned(),
+            config: Some(config),
+            path_override: None
+        })
+    }
+
+    pub fn override_paths(mut self, paths: Vec<PathBuf>) -> Result<Self, Box<dyn Error>> {
+        self.path_override = Some(paths);
+        Ok(self)
+    }
+}
+
 
 fn get_default_dirs(name: &str) -> Vec<PathBuf> {
     let etc_dir = PathBuf::from("/etc/");
@@ -48,7 +95,7 @@ fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBu
     None
 }
 
-fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str /*, suffix: &str*/) -> Vec<PathBuf> {
+fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str) -> Vec<PathBuf> {
     let mut dropin_paths: Vec<PathBuf> = vec![];
     for path in &conf_dirs {
         let ext1 = format!("{}.d", name);
@@ -95,31 +142,7 @@ fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigE
     
     Ok(dropin_map)
 }
-
-pub fn read_config(name: &str, suffix: &str) -> Result<Config, ConfigError> {
-    let mut builder: ConfigBuilder<DefaultState> = Config::builder();
-    let paths = get_default_dirs(name);
-    let dropin_paths = paths.clone();
-    let configfile = find_conf(paths, name, suffix);
-
-    if configfile.is_some() {
-        builder = builder.add_source(File::from(configfile.unwrap()));
-    }
-
-    let dropin_files = find_dropins(dropin_paths, name);
-    let dropins = read_dropins(dropin_files)?;
-
-    for (key, val) in dropins {
-        builder = builder.set_override(key, val)?;
-    }
-
-    builder.build()
-}
 /*
-pub fn new_config(format: Config::FileFormat) {
-
-}
-
 pub fn merge_config(file1: Config::Config, file2: Config::Config) {
 
 }
@@ -133,10 +156,6 @@ pub fn set_value(confg: Config, key: &str {
 }
 
 pub fn get_value(config: Config, key: &str) {
-
-}
-
-pub fn set_dirs(dirs: &[&str]) -> Config::ConfigError {
 
 }
 
