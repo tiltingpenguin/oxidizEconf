@@ -5,48 +5,45 @@ use std::{path::PathBuf, fmt::Debug, error::Error};
 #[derive(Debug, Clone)]
 pub struct Cfg {
     name: String,
+    extension: String,
     config: Option<Config>,
     path_override: Option<Vec<PathBuf>>,
 }
 
 impl Cfg {
     pub fn from_config(name: &str, suffix: &str) -> Result<Self, ConfigError> {
-
         let mut cfg = Self {
             name: name.to_owned(),
+            extension: suffix.to_owned(),
             config: None,
             path_override: None,
         };
-        cfg.read_config(name, suffix)
+        cfg.read_config()?;
+        Ok(cfg)
     }
 
-    pub fn read_config(&mut self, name: &str, suffix: &str) -> Result<Self, ConfigError> {
+    pub fn read_config(&mut self) -> Result<(),ConfigError> {
         let mut builder: ConfigBuilder<DefaultState> = Config::builder();
-        let paths: Vec<PathBuf>;
-        match self.path_override {
-            Some(_) => paths = self.path_override.clone().unwrap(),
-            None => paths = get_default_dirs(name),
-        }
+        let paths = match self.path_override {
+            Some(_) => self.path_override.clone().unwrap(),
+            None => get_default_dirs(),
+        };
         let dropin_paths = paths.clone();
-        let configfile = find_conf(paths, name, suffix);
+        let configfile = find_conf(paths, &self.name, &self.extension);
     
         if configfile.is_some() {
             builder = builder.add_source(File::from(configfile.unwrap()));
         }
     
-        let dropin_files = find_dropins(dropin_paths, name);
+        let dropin_files = find_dropins(dropin_paths, &self.name);
         let dropins = read_dropins(dropin_files)?;
     
         for (key, val) in dropins {
             builder = builder.set_override(key, val)?;
         }
-        let config = builder.build()?;
+        self.config = Some(builder.build()?);
 
-        Ok(Self {
-            name: name.to_owned(),
-            config: Some(config),
-            path_override: None
-        })
+        Ok(())
     }
 
     pub fn override_paths(mut self, paths: Vec<PathBuf>) -> Result<Self, Box<dyn Error>> {
@@ -56,39 +53,35 @@ impl Cfg {
 }
 
 
-fn get_default_dirs(name: &str) -> Vec<PathBuf> {
+fn get_default_dirs() -> Vec<PathBuf> {
     let etc_dir = PathBuf::from("/etc/");
-    let etc_subdir = etc_dir.join(name);
     let run_dir = PathBuf::from("/run/");
-    let run_subdir = run_dir.join(name);
     let usr_etcdir = PathBuf::from("/usr/etc/");
-    let usr_etcsubdir = usr_etcdir.join(name);
     let usr_sharedir = PathBuf::from("/usr/share/");
-    let usr_sharesubdir = usr_sharedir.join(name);
     let usr_libdir = PathBuf::from("/usr/lib/");
-    let usr_libsubdir = usr_libdir.join(name);
 
     vec![
         etc_dir,
-        etc_subdir,
         run_dir,
-        run_subdir,
         usr_etcdir,
-        usr_etcsubdir,
         usr_sharedir,
-        usr_sharesubdir,
         usr_libdir,
-        usr_libsubdir,
     ]
 }
 
 fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBuf> {
     for path in paths.iter_mut() {
-        path.set_file_name(name);
+        let mut subpath = path.join(name);
+        path.push(name);
         path.set_extension(suffix);
         if path.is_file() {
             let p = path.clone();
             return Some(p);
+        }
+        subpath.push(name);
+        subpath.set_extension(suffix);
+        if subpath.is_file() {
+            return Some(subpath);
         }
     }
     log::info!("No main config file found, reading dropins");
@@ -98,17 +91,24 @@ fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBu
 fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str) -> Vec<PathBuf> {
     let mut dropin_paths: Vec<PathBuf> = vec![];
     for path in &conf_dirs {
+        let subpath = path.join(name);
         let ext1 = format!("{}.d", name);
         let ext2 = format!("{}.conf.d", name);
-        let d = path.join(ext1);
-        let confd = path.join(ext2);
+        let d = path.join(&ext1);
+        let confd = path.join(&ext2);
+        let subd = subpath.join(&ext1);
+        let subconfd = subpath.join(&ext2);
         if d.is_dir() {
             dropin_paths.push(d);
         } else if confd.is_dir() {
             dropin_paths.push(confd);
+        } else if subd.is_dir() {
+            dropin_paths.push(subd);
+        } else if subconfd.is_dir() {
+            dropin_paths.push(subconfd);
         }
     }
-
+    
     let mut dropin_list: Vec<PathBuf> = vec![];
     for path in dropin_paths {
         for entry in path.read_dir().expect("failed to read dir") {
@@ -124,7 +124,7 @@ fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str) -> Vec<PathBuf> {
 }
 
 fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigError> {
-    let mut dropin_map: HashMap<String, Value> = HashMap::new();
+    let mut dropin_cache: HashMap<String, Value> = HashMap::new();
     for d in dropins {
         let ext = d.extension().unwrap();
         // try to parse any unknown file format as ini
@@ -136,11 +136,11 @@ fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigE
             },
         };
         for (key, val) in f.iter() {
-            dropin_map.insert(key.clone(), val.clone());
+            dropin_cache.insert(key.clone(), val.clone());
         }
     }
     
-    Ok(dropin_map)
+    Ok(dropin_cache)
 }
 /*
 pub fn merge_config(file1: Config::Config, file2: Config::Config) {
