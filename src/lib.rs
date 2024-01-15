@@ -6,16 +6,26 @@ use std::{path::PathBuf, fmt::Debug, error::Error};
 pub struct Cfg {
     name: String,
     extension: String,
-    config: Option<Config>,
+    config: Config,
     path_override: Option<Vec<PathBuf>>,
+}
+
+pub enum ValueType {
+    String,
+    Int,
+    Float,
+    Bool,
+    Table,
+    Array,
 }
 
 impl Cfg {
     pub fn from_config(name: &str, suffix: &str) -> Result<Self, ConfigError> {
+        let placeholder = Config::builder().build().expect("Should be able to construct empty config object");
         let mut cfg = Self {
             name: name.to_owned(),
             extension: suffix.to_owned(),
-            config: None,
+            config: placeholder,
             path_override: None,
         };
         cfg.read_config()?;
@@ -41,15 +51,27 @@ impl Cfg {
         for (key, val) in dropins {
             builder = builder.set_override(key, val)?;
         }
-        self.config = Some(builder.build()?);
+        self.config = builder.build()?;
 
         Ok(())
     }
 
-    pub fn override_paths(mut self, paths: Vec<PathBuf>) -> Result<Self, Box<dyn Error>> {
+    pub fn override_paths(&mut self, paths: Vec<PathBuf>) {
         self.path_override = Some(paths);
-        Ok(self)
     }
+
+    pub fn get_value(&self, key: &str, rettype: ValueType) -> Result<ValueKind, ConfigError> {
+        let val = match rettype {
+            ValueType::String => ValueKind::String(self.config.get_string(key)?),
+            ValueType::Int => ValueKind::I64(self.config.get_int(key)?),
+            ValueType::Float => ValueKind::Float(self.config.get_float(key)?),
+            ValueType::Bool => ValueKind::Boolean(self.config.get_bool(key)?),
+            ValueType::Table => ValueKind::Table(self.config.get_table(key)?),
+            ValueType::Array => ValueKind::Array(self.config.get_array(key)?),
+        };
+        Ok(val)
+    }
+
 }
 
 
@@ -126,9 +148,12 @@ fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str) -> Vec<PathBuf> {
 fn read_dropins(dropins: Vec<PathBuf>) -> Result<HashMap<String, Value>, ConfigError> {
     let mut dropin_cache: HashMap<String, Value> = HashMap::new();
     for d in dropins {
-        let ext = d.extension().unwrap();
+        let ext = match d.extension() {
+            Some(ext) => ext.to_str().expect("Extension should be valid unicode"),
+            None => "",
+        };
         // try to parse any unknown file format as ini
-        let f = match ext.to_str().unwrap() {
+        let f = match ext {
             "toml" | "json" | "yaml" | "yml" | "ini" | "ron" | "json5" => File::from(d).collect()?,
             _ => { 
                 log::debug!("Unknown file format. Trying to parse as ini");
