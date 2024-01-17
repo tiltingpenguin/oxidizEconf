@@ -29,10 +29,10 @@ impl CfgBuilder {
     pub fn build_config(self) -> Result<Config, ConfigError> {
         let paths = match self.path_override {
             Some(_) => self.path_override.clone().unwrap(),
-            None => get_default_dirs(),
+            None => get_default_dirs(self.project_name),
         };
 
-        let mut builder = read_config(&self.name, &self.extension, self.project_name, paths)?;
+        let mut builder = read_config(&self.name, &self.extension, paths)?;
 
         if self.defaults.is_some() {
             for (key, value) in self.defaults.unwrap() {
@@ -56,12 +56,11 @@ pub fn new(name: &str, extension: &str) -> CfgBuilder {
 fn read_config(
     name: &str,
     extension: &str,
-    project_name: Option<String>,
     paths: Vec<PathBuf>,
 ) -> Result<ConfigBuilder<DefaultState>, ConfigError> {
     let mut builder: ConfigBuilder<DefaultState> = Config::builder();
     let dropin_paths = paths.clone();
-    let configfile = find_conf(paths, name, extension, project_name);
+    let configfile = find_conf(paths, name, extension);
 
     if configfile.is_some() {
         builder = builder.add_source(File::from(configfile.unwrap()));
@@ -77,23 +76,24 @@ fn read_config(
     Ok(builder)
 }
 
-fn get_default_dirs() -> Vec<PathBuf> {
+fn get_default_dirs(project_name: Option<String>) -> Vec<PathBuf> {
     let etc_dir = PathBuf::from("/etc/");
     let run_dir = PathBuf::from("/run/");
     let usr_etcdir = PathBuf::from("/usr/etc/");
     let usr_sharedir = PathBuf::from("/usr/share/");
     let usr_libdir = PathBuf::from("/usr/lib/");
 
-    vec![etc_dir, run_dir, usr_etcdir, usr_sharedir, usr_libdir]
-}
-
-fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str, project_name: Option<String>) -> Option<PathBuf> {
+    let mut dirs = vec![etc_dir, run_dir, usr_etcdir, usr_sharedir, usr_libdir];
     if project_name.is_some() {
-        let subdir = project_name.unwrap();
-        for p in paths.iter_mut() {
-            p.push(&subdir);
+        let project_dir = project_name.unwrap();
+        for d in dirs.iter_mut() {
+            d.push(&project_dir);
         }
     }
+    dirs
+}
+
+fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBuf> {
     for path in paths.iter_mut() {
         dbg!(&path);
         path.push(name);
@@ -110,21 +110,14 @@ fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str, project_name: Op
 fn find_dropins(conf_dirs: Vec<PathBuf>, name: &str) -> Vec<PathBuf> {
     let mut dropin_paths: Vec<PathBuf> = vec![];
     for path in &conf_dirs {
-        let subpath = path.join(name);
         let ext1 = format!("{}.d", name);
         let ext2 = format!("{}.conf.d", name);
         let d = path.join(&ext1);
         let confd = path.join(&ext2);
-        let subd = subpath.join(&ext1);
-        let subconfd = subpath.join(&ext2);
         if d.is_dir() {
             dropin_paths.push(d);
         } else if confd.is_dir() {
             dropin_paths.push(confd);
-        } else if subd.is_dir() {
-            dropin_paths.push(subd);
-        } else if subconfd.is_dir() {
-            dropin_paths.push(subconfd);
         }
     }
 
