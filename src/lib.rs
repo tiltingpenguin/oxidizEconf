@@ -6,6 +6,7 @@ use std::{error::Error, fmt::Debug, path::PathBuf};
 pub struct CfgBuilder {
     name: String,
     extension: String,
+    project_name: Option<String>,
     path_override: Option<Vec<PathBuf>>,
     defaults: Option<HashMap<String, Value>>,
 }
@@ -21,13 +22,17 @@ impl CfgBuilder {
         self.defaults = Some(defaults);
     }
 
+    pub fn set_project_name(&mut self, project_name: &str) {
+        self.project_name = Some(project_name.to_owned());
+    }
+
     pub fn build_config(self) -> Result<Config, ConfigError> {
         let paths = match self.path_override {
             Some(_) => self.path_override.clone().unwrap(),
             None => get_default_dirs(),
         };
 
-        let mut builder = read_config(&self.name, &self.extension, paths)?;
+        let mut builder = read_config(&self.name, &self.extension, self.project_name, paths)?;
 
         if self.defaults.is_some() {
             for (key, value) in self.defaults.unwrap() {
@@ -42,6 +47,7 @@ pub fn new(name: &str, extension: &str) -> CfgBuilder {
     CfgBuilder {
         name: name.to_owned(),
         extension: extension.to_owned(),
+        project_name: None,
         path_override: None,
         defaults: None,
     }
@@ -50,11 +56,12 @@ pub fn new(name: &str, extension: &str) -> CfgBuilder {
 fn read_config(
     name: &str,
     extension: &str,
+    project_name: Option<String>,
     paths: Vec<PathBuf>,
 ) -> Result<ConfigBuilder<DefaultState>, ConfigError> {
     let mut builder: ConfigBuilder<DefaultState> = Config::builder();
     let dropin_paths = paths.clone();
-    let configfile = find_conf(paths, name, extension);
+    let configfile = find_conf(paths, name, extension, project_name);
 
     if configfile.is_some() {
         builder = builder.add_source(File::from(configfile.unwrap()));
@@ -80,19 +87,20 @@ fn get_default_dirs() -> Vec<PathBuf> {
     vec![etc_dir, run_dir, usr_etcdir, usr_sharedir, usr_libdir]
 }
 
-fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBuf> {
+fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str, project_name: Option<String>) -> Option<PathBuf> {
+    if project_name.is_some() {
+        let subdir = project_name.unwrap();
+        for p in paths.iter_mut() {
+            p.push(&subdir);
+        }
+    }
     for path in paths.iter_mut() {
-        let mut subpath = path.join(name);
+        dbg!(&path);
         path.push(name);
         path.set_extension(suffix);
         if path.is_file() {
             let p = path.clone();
             return Some(p);
-        }
-        subpath.push(name);
-        subpath.set_extension(suffix);
-        if subpath.is_file() {
-            return Some(subpath);
         }
     }
     log::info!("No main config file found, reading dropins");
