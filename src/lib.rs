@@ -1,11 +1,12 @@
 use config::{builder::DefaultState, *};
+use glob::glob;
 use std::collections::HashMap;
 use std::{error::Error, fmt::Debug, path::PathBuf};
 
 #[derive(Debug, Clone)]
 pub struct CfgBuilder {
     name: String,
-    extension: String,
+    extensions: Vec<&'static str>,
     project_name: Option<String>,
     path_override: Option<Vec<PathBuf>>,
     defaults: Option<HashMap<String, Value>>,
@@ -26,13 +27,17 @@ impl CfgBuilder {
         self.project_name = Some(project_name.to_owned());
     }
 
+    pub fn set_extension(&mut self, extension: &'static str) {
+        self.extensions.push(extension);
+    }
+
     pub fn build_config(self) -> Result<Config, ConfigError> {
         let paths = match self.path_override {
             Some(_) => self.path_override.clone().unwrap(),
             None => get_default_dirs(self.project_name),
         };
 
-        let mut builder = read_config(&self.name, &self.extension, paths)?;
+        let mut builder = read_config(&self.name, self.extensions, paths)?;
 
         if self.defaults.is_some() {
             for (key, value) in self.defaults.unwrap() {
@@ -43,10 +48,10 @@ impl CfgBuilder {
     }
 }
 
-pub fn new(name: &str, extension: &str) -> CfgBuilder {
+pub fn new(name: &str) -> CfgBuilder {
     CfgBuilder {
         name: name.to_owned(),
-        extension: extension.to_owned(),
+        extensions: vec!["ini", "conf", "toml", "yaml", "yml", "json", "json5", "ron"],
         project_name: None,
         path_override: None,
         defaults: None,
@@ -55,12 +60,12 @@ pub fn new(name: &str, extension: &str) -> CfgBuilder {
 
 fn read_config(
     name: &str,
-    extension: &str,
+    extensions: Vec<&str>,
     paths: Vec<PathBuf>,
 ) -> Result<ConfigBuilder<DefaultState>, ConfigError> {
     let mut builder: ConfigBuilder<DefaultState> = Config::builder();
     let dropin_paths = paths.clone();
-    let configfile = find_conf(paths, name, extension);
+    let configfile = find_conf(paths, name, extensions);
 
     if configfile.is_some() {
         builder = builder.add_source(File::from(configfile.unwrap()));
@@ -93,17 +98,27 @@ fn get_default_dirs(project_name: Option<String>) -> Vec<PathBuf> {
     dirs
 }
 
-fn find_conf(mut paths: Vec<PathBuf>, name: &str, suffix: &str) -> Option<PathBuf> {
+fn find_conf(mut paths: Vec<PathBuf>, name: &str, extension_list: Vec<&str>) -> Option<PathBuf> {
     for path in paths.iter_mut() {
-        dbg!(&path);
-        path.push(name);
-        path.set_extension(suffix);
-        if path.is_file() {
-            let p = path.clone();
-            return Some(p);
+        let pattern = format!("{:?}/{:?}.*", path.display(), name);
+        for entry in glob(&pattern).expect("Failed to read pattern") {
+            match entry {
+                Ok(path) => {
+                    // glob pattern ensures that path contains an extension
+                    let ext = path
+                        .extension()
+                        .expect("Should have a file extension")
+                        .to_str()
+                        .expect("Extension should be valid Unicode");
+                    if extension_list.contains(&ext) {
+                        return Some(path);
+                    }
+                }
+                Err(e) => log::debug!("{:?}", e),
+            }
         }
     }
-    log::info!("No main config file found, reading dropins");
+    log::debug!("No main config file found, reading dropins");
     None
 }
 
