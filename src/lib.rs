@@ -58,6 +58,13 @@ pub fn new(name: &str) -> CfgBuilder {
     }
 }
 
+pub fn merge(config1: &Config, config2: &Config) -> Result<Config, ConfigError>{
+    let mut builder = Config::builder();
+    builder = builder.add_source(config1.to_owned());
+    builder = builder.add_source(config2.to_owned());
+    builder.build()
+}
+
 fn read_config(
     name: &str,
     extensions: Vec<&str>,
